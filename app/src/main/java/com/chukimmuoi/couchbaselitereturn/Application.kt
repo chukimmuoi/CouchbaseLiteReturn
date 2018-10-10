@@ -212,6 +212,12 @@ class Application: Application(), Replication.ChangeListener {
     private var mPull: Replication? = null
     private var mPush: Replication? = null
 
+    /**
+     * @dbName name db
+     * @ipAddress ip server
+     * @username name db
+     * @password ENCRYPTION_KEY
+     * */
     private fun startReplication(dbName: String, ipAddress: String, username: String, password: String) {
         val syncString = String.format(FORMAT_URL_SYNC_GATEWAY, ipAddress, PORT_SYNC_DEFAULT, dbName)
         val syncURL = URL(syncString)
@@ -282,12 +288,16 @@ class Application: Application(), Replication.ChangeListener {
     // Peer-to-Peer
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#peer-to-peer
     private var mListenerSyncGateway: LiteListener? = null
-    private fun startSyncGateway(username: String) {
+    /**
+     * @username name db
+     * @password ENCRYPTION_KEY
+     * */
+    private fun startSyncGateway(username: String, password: String) {
         try {
             stopSyncGateway()
 
-            val credentials = Credentials(username, ENCRYPTION_KEY)
-            mListenerSyncGateway = LiteListener(mManager, 55000, credentials)
+            val credentials = Credentials(username, password)
+            mListenerSyncGateway = LiteListener(mManager, PORT_SYNC_DEFAULT, credentials)
             mListenerSyncGateway?.let {
                 val thread = Thread(it)
                 thread.start()
