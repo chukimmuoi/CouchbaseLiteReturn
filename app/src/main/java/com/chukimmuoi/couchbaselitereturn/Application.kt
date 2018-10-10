@@ -6,6 +6,8 @@ import com.couchbase.lite.*
 import com.couchbase.lite.android.AndroidContext
 import com.couchbase.lite.auth.Authenticator
 import com.couchbase.lite.auth.AuthenticatorFactory
+import com.couchbase.lite.listener.Credentials
+import com.couchbase.lite.listener.LiteListener
 import com.couchbase.lite.replicator.Replication
 import com.couchbase.lite.util.Log
 import java.io.IOException
@@ -36,6 +38,10 @@ class Application: Application(), Replication.ChangeListener {
 
         private const val TYPE = "type"
         private const val CONTENT = "content"
+
+        private const val PORT_SYNC_DEFAULT = 55000
+
+        private const val FORMAT_URL_SYNC_GATEWAY = "http://%1\$s:%2\$s/%3\$s/"
     }
 
     private fun formatNameDB(branchName: String) = "db${StringUtil.MD5(branchName)}Pos365"
@@ -203,61 +209,100 @@ class Application: Application(), Replication.ChangeListener {
 
     // Replication
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#replication
-    private val mSyncUrl : URL by lazy { URL("") }
     private var mPull: Replication? = null
     private var mPush: Replication? = null
 
-    private fun startReplication(username: String, password: String) {
+    private fun startReplication(dbName: String, ipAddress: String, username: String, password: String) {
+        val syncString = String.format(FORMAT_URL_SYNC_GATEWAY, ipAddress, PORT_SYNC_DEFAULT, dbName)
+        val syncURL = URL(syncString)
+
         val  auth = AuthenticatorFactory.createBasicAuthenticator(username, password)
-        startReplication(auth)
+
+        startReplication(auth = auth, syncURL = syncURL)
     }
-    private fun startReplication(auth: Authenticator) {
-        if (mPull == null) {
-            mDatabase?.let {
-                mPull = it.createPullReplication(mSyncUrl)
-                mPull?.let {
-                    it.isContinuous = true
-                    it.authenticator = auth
-                    it.addChangeListener(this)
+
+    private fun startReplication(auth: Authenticator, syncURL: URL) {
+        try {
+            if (mPull == null) {
+                mDatabase?.let {
+                    mPull = it.createPullReplication(syncURL)
+                    mPull?.let {
+                        it.isContinuous = true
+                        it.authenticator = auth
+                        it.addChangeListener(this)
+                    }
                 }
             }
-        }
 
-        if (mPush == null) {
-            mDatabase?.let {
-                mPush = it.createPushReplication(mSyncUrl)
-                mPush?.let {
-                    it.isContinuous = true
-                    it.authenticator = auth
-                    it.addChangeListener(this)
+            if (mPush == null) {
+                mDatabase?.let {
+                    mPush = it.createPushReplication(syncURL)
+                    mPush?.let {
+                        it.isContinuous = true
+                        it.authenticator = auth
+                        it.addChangeListener(this)
+                    }
                 }
             }
-        }
 
-        mPush?.let {
-            it.stop()
-            it.start()
-        }
+            mPush?.let {
+                it.stop()
+                it.start()
+            }
 
-        mPush?.let {
-            it.stop()
-            it.start()
+            mPush?.let {
+                it.stop()
+                it.start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     private fun stopReplication() {
-        mPull?.let {
-            it.removeChangeListener(this)
-            it.stop()
-        }
+        try {
+            mPull?.let {
+                it.removeChangeListener(this)
+                it.stop()
+            }
 
-        mPush?.let {
-            it.removeChangeListener(this)
-            it.stop()
+            mPush?.let {
+                it.removeChangeListener(this)
+                it.stop()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     override fun changed(event: Replication.ChangeEvent) {
+        Log.e(TAG, "changed", "Do something")
+    }
 
+    // Peer-to-Peer
+    // https://docs.couchbase.com/couchbase-lite/1.4/java.html#peer-to-peer
+    private var mListenerSyncGateway: LiteListener? = null
+    private fun startSyncGateway(username: String) {
+        try {
+            stopSyncGateway()
+
+            val credentials = Credentials(username, ENCRYPTION_KEY)
+            mListenerSyncGateway = LiteListener(mManager, 55000, credentials)
+            mListenerSyncGateway?.let {
+                val thread = Thread(it)
+                thread.start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun stopSyncGateway() {
+        try {
+            mListenerSyncGateway?.let { it.stop() }
+            mListenerSyncGateway = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
