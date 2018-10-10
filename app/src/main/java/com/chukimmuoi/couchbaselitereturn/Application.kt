@@ -33,9 +33,6 @@ class Application: Application(), Replication.ChangeListener {
         // Encryption (Don't store encryption key in the source code. We are doing it here just as an example):
         private const val ENCRYPTION_KEY = "!\$~&1d2E3xp0^S(3_6*5)#@"
 
-        // Logging:
-        private const val LOGGING_ENABLED = true
-
         private const val TYPE = "type"
         private const val CONTENT = "content"
 
