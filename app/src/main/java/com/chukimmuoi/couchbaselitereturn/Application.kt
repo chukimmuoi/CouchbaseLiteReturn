@@ -210,14 +210,24 @@ class Application: Application(), Replication.ChangeListener {
     private var mPush: Replication? = null
 
     /**
-     * @dbName name db
      * @ipAddress ip server
+     * @port PORT_SYNC_DEFAULT = 55000
+     * @dbName name db
+     * */
+    private fun getSyncGatewayURL(ipAddress: String, port: Int, dbName: String) : URL {
+        val syncString = String.format(FORMAT_URL_SYNC_GATEWAY, ipAddress, port, dbName)
+        return URL(syncString)
+    }
+
+    /**
+     * @ipAddress ip server
+     * @port PORT_SYNC_DEFAULT = 55000
+     * @dbName name db
      * @username name db
      * @password ENCRYPTION_KEY
      * */
-    private fun startReplication(dbName: String, ipAddress: String, username: String, password: String) {
-        val syncString = String.format(FORMAT_URL_SYNC_GATEWAY, ipAddress, PORT_SYNC_DEFAULT, dbName)
-        val syncURL = URL(syncString)
+    private fun startReplication(ipAddress: String, port: Int, dbName: String, username: String, password: String) {
+        val syncURL = getSyncGatewayURL(ipAddress, port, dbName)
 
         val  auth = AuthenticatorFactory.createBasicAuthenticator(username, password)
 
@@ -286,15 +296,16 @@ class Application: Application(), Replication.ChangeListener {
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#peer-to-peer
     private var mListenerSyncGateway: LiteListener? = null
     /**
+     * @port PORT_SYNC_DEFAULT = 55000
      * @username name db
      * @password ENCRYPTION_KEY
      * */
-    private fun startSyncGateway(username: String, password: String) {
+    private fun startSyncGateway(port: Int, username: String, password: String) {
         try {
             stopSyncGateway()
 
             val credentials = Credentials(username, password)
-            mListenerSyncGateway = LiteListener(mManager, PORT_SYNC_DEFAULT, credentials)
+            mListenerSyncGateway = LiteListener(mManager, port, credentials)
             mListenerSyncGateway?.let {
                 val thread = Thread(it)
                 thread.start()
@@ -311,5 +322,12 @@ class Application: Application(), Replication.ChangeListener {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun onDestroyData() {
+        stopReplication()
+        stopSyncGateway()
+
+        mDatabase = null
     }
 }
