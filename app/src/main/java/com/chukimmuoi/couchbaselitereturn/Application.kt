@@ -33,7 +33,7 @@ class Application: Application(), Replication.ChangeListener {
         // Encryption (Don't store encryption key in the source code. We are doing it here just as an example):
         private const val ENCRYPTION_KEY = "!\$~&1d2E3xp0^S(3_6*5)#@"
 
-        private const val TYPE = "type"
+        private const val TYPE    = "type"
         private const val CONTENT = "content"
 
         private const val PORT_SYNC_DEFAULT = 55000
@@ -325,9 +325,34 @@ class Application: Application(), Replication.ChangeListener {
     }
 
     private fun onDestroyData() {
-        stopReplication()
-        stopSyncGateway()
+        stopListener()
 
         mDatabase = null
+    }
+
+    /**
+     * @ipAddress ip server
+     * @port PORT_SYNC_DEFAULT = 55000
+     * @dbName name db
+     * @username name db
+     * @password ENCRYPTION_KEY
+     * */
+    private fun startListener(ipAddress: String = "", port: Int = PORT_SYNC_DEFAULT,
+                              dbName: String = "",
+                              username: String = "", password: String = FORMAT_URL_SYNC_GATEWAY) {
+        if (ipAddress.isNullOrEmpty())  {
+            startSyncGateway(port, username, password)
+        } else {
+            startReplication(ipAddress, port, dbName, username, password)
+        }
+    }
+
+    private fun startListener(ipAddress: String = "", dbName: String = "") {
+        startListener(ipAddress = ipAddress, dbName = dbName, username = dbName)
+    }
+
+    private fun stopListener() {
+        stopReplication()
+        stopSyncGateway()
     }
 }
