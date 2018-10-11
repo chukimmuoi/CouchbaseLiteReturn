@@ -347,7 +347,7 @@ class Application: Application(), Replication.ChangeListener {
         }
     }
 
-    private fun startListener(ipAddress: String = "", dbName: String = "") {
+    private fun startListener(dbName: String, ipAddress: String = "") {
         startListener(ipAddress = ipAddress, dbName = dbName, username = dbName)
     }
 
