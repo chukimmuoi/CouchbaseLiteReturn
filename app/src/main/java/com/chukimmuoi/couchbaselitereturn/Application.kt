@@ -1,7 +1,6 @@
 package com.chukimmuoi.couchbaselitereturn
 
 import android.app.Application
-import com.chukimmuoi.couchbaselitereturn.util.StringUtil
 import com.couchbase.lite.*
 import com.couchbase.lite.android.AndroidContext
 import com.couchbase.lite.auth.Authenticator
@@ -25,13 +24,14 @@ import java.net.URL
 class Application: Application(), Replication.ChangeListener {
 
     companion object {
-        const val TAG = "Application"
+        private val TAG = this::class.java.simpleName
 
         // Storage Type: .SQLITE_STORAGE or .FORESTDB_STORAGE
         private const val STORAGE_TYPE = Manager.SQLITE_STORAGE
 
         // Encryption (Don't store encryption key in the source code. We are doing it here just as an example):
-        private const val ENCRYPTION_KEY = "!\$~&1d2E3xp0^S(3_6*5)#@"
+        private const val PASSWORD_SYNC_DEFAULT = "!\$~&1d2E3xp0^S(3_6*5)#@"
+        private const val USERNAME_SYNC_DEFAULT = "p0s365"
 
         private const val TYPE    = "type"
         private const val CONTENT = "content"
@@ -39,9 +39,11 @@ class Application: Application(), Replication.ChangeListener {
         private const val PORT_SYNC_DEFAULT = 55000
 
         private const val FORMAT_URL_SYNC_GATEWAY = "http://%1\$s:%2\$s/%3\$s/"
+
+        private const val MAX_REVS = 5
     }
 
-    private fun formatNameDB(branchName: String) = "db${StringUtil.MD5(branchName)}Pos365"
+    private fun formatNameDB(branchName: String) = "db$branchName"
 
     // Creating a manager.
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#creating-a-manager
@@ -79,10 +81,10 @@ class Application: Application(), Replication.ChangeListener {
             val options = DatabaseOptions()
             options.isCreate = true
             options.storageType = STORAGE_TYPE
-            options.encryptionKey = ENCRYPTION_KEY
+            options.encryptionKey = null
             return mManager.openDatabase(dbName, options)
         } catch (e: CouchbaseLiteException) {
-            Log.e(TAG, "Cannot create database for name: db${branchName}Pos365", e)
+            Log.e(TAG, "Cannot create database for name: db$branchName", e)
         }
         return null
     }
@@ -98,7 +100,15 @@ class Application: Application(), Replication.ChangeListener {
                     it.changes.forEach {
                         /* Access the document revision related to that change. */
                         val properties = it.addedRevision.body.properties
-
+//                        val table = properties[TYPE].toString()
+//                        val content = properties[CONTENT].toString()
+//                        when (table) {
+//                            ServerEvents.TABLE_NAME -> {
+//                                val serverEvents = GsonBuilder().create().fromJson(content, object : TypeToken<ServerEvents>() {}.type) as ServerEvents
+//                                val realTime = RealTime("SyncGateway", "Update", listOf(serverEvents))
+//                                (mContext as CashierApplication).sendSyncGateway(realTime)
+//                            }
+//                        }
                     }
                 }
             }
@@ -116,6 +126,18 @@ class Application: Application(), Replication.ChangeListener {
             return true
         } catch (e: IOException) {
             Log.e(TAG, "Cannot delete database", e)
+        }
+        return false
+    }
+
+    fun insertOrUpdateDocument(typeName: String, uuid: String = "", content: Any) : Boolean {
+        mDatabase?.let {
+            val doc = it.getExistingDocument(uuid)
+            return if (doc == null) {
+                createDocument(typeName, uuid, content)
+            } else {
+                updateDocument(uuid, content)
+            }
         }
         return false
     }
@@ -142,12 +164,13 @@ class Application: Application(), Replication.ChangeListener {
 
     // Reading documents
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#reading-documents
-    private fun readDocument(uuid: String): String {
+    fun readDocument(uuid: String): String {
         mDatabase?.let {
-            val doc = it.getDocument(uuid)
             return try {
-                doc.getProperty(CONTENT).toString()
-            } catch (e: CouchbaseLiteException) {
+                val doc = it.getExistingDocument(uuid)
+                val result = doc?.getProperty(CONTENT)?.toString() ?: ""
+                result
+            } catch (e: Exception) {
                 Log.e(TAG, "Cannot read document", e)
                 ""
             }
@@ -178,10 +201,10 @@ class Application: Application(), Replication.ChangeListener {
 
     // Deleting documents
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#deleting-documents
-    private fun deleteDocument(uuid: String) : Boolean{
+    fun deleteDocument(uuid: String) : Boolean{
         mDatabase?.let {
-            val doc = it.getDocument(uuid)
             return try {
+                val doc = it.getDocument(uuid)
                 doc.delete()
                 true
             } catch (e: CouchbaseLiteException) {
@@ -208,6 +231,7 @@ class Application: Application(), Replication.ChangeListener {
     // https://docs.couchbase.com/couchbase-lite/1.4/java.html#replication
     private var mPull: Replication? = null
     private var mPush: Replication? = null
+    private var mCurrentURL = ""
 
     /**
      * @ipAddress ip server
@@ -216,6 +240,10 @@ class Application: Application(), Replication.ChangeListener {
      * */
     private fun getSyncGatewayURL(ipAddress: String, port: Int, dbName: String) : URL {
         val syncString = String.format(FORMAT_URL_SYNC_GATEWAY, ipAddress, port, dbName)
+        if (mCurrentURL != syncString) {
+            stopReplication()
+            mCurrentURL = syncString
+        }
         return URL(syncString)
     }
 
@@ -258,7 +286,7 @@ class Application: Application(), Replication.ChangeListener {
                 }
             }
 
-            mPush?.let {
+            mPull?.let {
                 it.stop()
                 it.start()
             }
@@ -278,11 +306,13 @@ class Application: Application(), Replication.ChangeListener {
                 it.removeChangeListener(this)
                 it.stop()
             }
+            mPull = null
 
             mPush?.let {
                 it.removeChangeListener(this)
                 it.stop()
             }
+            mPush = null
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -324,6 +354,13 @@ class Application: Application(), Replication.ChangeListener {
         }
     }
 
+    fun clearCacheData() {
+        stopListener()
+        deleteDatabase()
+
+        mDatabase = null
+    }
+
     private fun onDestroyData() {
         stopListener()
 
@@ -337,9 +374,9 @@ class Application: Application(), Replication.ChangeListener {
      * @username name db
      * @password ENCRYPTION_KEY
      * */
-    private fun startListener(ipAddress: String = "", port: Int = PORT_SYNC_DEFAULT,
-                              dbName: String = "",
-                              username: String = "", password: String = FORMAT_URL_SYNC_GATEWAY) {
+    private fun startListener(ipAddress: String = "", port: Int = PORT_SYNC_DEFAULT, dbName: String,
+                              username: String = USERNAME_SYNC_DEFAULT,
+                              password: String = PASSWORD_SYNC_DEFAULT) {
         if (ipAddress.isNullOrEmpty())  {
             startSyncGateway(port, username, password)
         } else {
@@ -347,12 +384,36 @@ class Application: Application(), Replication.ChangeListener {
         }
     }
 
-    private fun startListener(dbName: String, ipAddress: String = "") {
-        startListener(ipAddress = ipAddress, dbName = dbName, username = dbName)
+    private fun startListener(dbName: String) {
+//        val screenType = mPreferencesHelper.getScreenType()
+//        when(screenType) {
+//            PreferencesHelper.VALUE_SCREEN_ORDER -> {
+//                val ipAddress = mPreferencesHelper.getTypeSyncGateway()
+//                if (!ipAddress.isNullOrEmpty()) {
+//                    startListener(ipAddress = ipAddress, dbName = dbName, username = "$dbName$USERNAME_SYNC_DEFAULT")
+//                }
+//            }
+//            PreferencesHelper.VALUE_SCREEN_CASHIERS -> {
+//                startListener(dbName = dbName, username = "$dbName$USERNAME_SYNC_DEFAULT")
+//            }
+//        }
     }
 
     private fun stopListener() {
         stopReplication()
         stopSyncGateway()
+    }
+
+    fun useDbFollowBranchId() {
+//        val currentBranch = mPreferencesHelper.getCurrentBranchId()
+//
+//        mDatabase = getBranchDatabase("$currentBranch")
+//        mDatabase?.let {
+//            val name = it.name
+//            Timber.e("Db name = $name")
+//
+//            registerNotifications("$currentBranch")
+//            startListener(name)
+//        }
     }
 }
